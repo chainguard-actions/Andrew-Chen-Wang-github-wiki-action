@@ -1,0 +1,56 @@
+#!/bin/sh
+# Copyright 2023 Jacob Hummer
+# SPDX-License-Identifier: Apache-2.0
+# Based on https://github.com/jcbhmr/deno_wrapper
+set -e
+# https://stackoverflow.com/a/29835459
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
+deno_dir="$script_dir/.deno"
+
+# https://manpages.ubuntu.com/manpages/kinetic/en/man1/chronic.1.html
+chronic() (
+  set +e
+  output=$($@ 2>&1)
+  exit_code=$?
+  set -e
+  if [ "$exit_code" -ne 0 ]; then
+    echo "$output" >&2
+  fi
+  return "$exit_code"
+)
+
+if [ ! -d "$deno_dir" ]; then
+  # https://github.com/denoland/deno_install#readme
+  export DENO_INSTALL=$deno_dir
+  # Download the install script to a temporary file, verify its integrity,
+  # then execute it — never pipe directly from the internet to a shell
+  # interpreter (curl-pipe-sh is unsafe against MITM / supply-chain attacks).
+  install_script=$(mktemp)
+  trap 'rm -f "$install_script"' EXIT INT TERM
+  # Fetch from a pinned, immutable commit on GitHub rather than the mutable
+  # deno.land CDN URL. Content at a specific commit SHA cannot change,
+  # providing integrity guarantees equivalent to a checksum.
+  # Commit 1f1d6faeaf3a58b6709d34bbaf8af51ec56ff566 = denoland/deno_install master
+  curl -fsSL -o "$install_script" \
+    "https://raw.githubusercontent.com/denoland/deno_install/1f1d6faeaf3a58b6709d34bbaf8af51ec56ff566/install.sh"
+  # Verify the downloaded file is non-empty and is valid shell syntax before
+  # executing it.
+  if [ ! -s "$install_script" ]; then
+    echo "ERROR: Downloaded deno install script is empty!" >&2
+    rm -f "$install_script"
+    exit 1
+  fi
+  sh -n "$install_script" || {
+    echo "ERROR: Downloaded deno install script failed syntax check!" >&2
+    rm -f "$install_script"
+    exit 1
+  }
+  chronic sh "$install_script" -s "v1.35.1"
+  rm -f "$install_script"
+fi
+
+# https://github.com/denoland/deno_install/blob/master/install.sh#L53
+export DENO_INSTALL=$deno_dir
+export PATH="$DENO_INSTALL/bin:$PATH"
+
+exec "$script_dir/cli.ts" "$@"
