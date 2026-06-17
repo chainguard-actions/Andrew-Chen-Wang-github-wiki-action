@@ -1,0 +1,99 @@
+# Copyright 2023 Andrew Chen Wang
+# Copyright 2023 Jacob Hummer
+# SPDX-License-Identifier: Apache-2.0
+name: GitHub Wiki Action
+author: Andrew Chen Wang <acwangpython@gmail.com>
+description: "\U0001F4D6 Deploy docs from your source tree to the GitHub wiki"
+branding:
+  icon: book
+  color: blue
+inputs:
+  strategy:
+    description: >-
+      Select from 'clone' or 'init' to determine which method to use to push changes to the GitHub wiki. 'clone' will clone the .wiki.git repo and add an additional commit. 'init' will create a new repo with a single commit and force push to the .wiki.git. 'init' involves a force-push! The default is 'clone'.
+    required: true
+    default: clone
+  repository:
+    description: >-
+      The repository housing the wiki. Use this if you're publishing to a wiki that's not the current repository. You can change the GitHub server with the github-server-url input. Default is github.repository.
+    required: true
+    default: ${{ github.repository }}
+  github-server-url:
+    description: >-
+      An alternate https://github.com URL, usually for GitHub Enterprise deployments under your own domain. Default is github.server_url (usually https://github.com).
+    required: true
+    default: ${{ github.server_url }}
+  token:
+    description: >-
+      github.token is the default. This token is used when cloning and pushing wiki changes.
+    required: true
+    default: ${{ github.token }}
+  path:
+    description: >-
+      The directory to use for your wiki contents. Default wiki.
+    required: true
+    default: wiki
+  commit-message:
+    description: >-
+      The message to use when committing new content. Default is 'Update wiki github.sha'. You probably don't need to change this, since this only applies if you look really closely in your wiki.
+    required: true
+    default: Update wiki ${{ github.sha }}
+  ignore:
+    description: >-
+      A multiline list of files that should be ignored when committing and pushing to the remote wiki. Each line is a pattern like .gitignore. Make sure these paths are relative to the path option! The default is none.
+    required: true
+    default: ""
+  dry-run:
+    description: >-
+      Whether or not to actually attempt to push changes back to the wiki itself. If this is set to true, we instead print the remote URL and do not push to the remote wiki. The default is false. This is useful for testing.
+    required: true
+    default: false
+  preprocess:
+    description: >-
+      If this option is true, we will preprocess the wiki to move the README.md to Home.md as well as rewriting all .md links to be bare links. This helps ensure that the Markdown works in source control as well as the wiki. The default is true.
+    required: true
+    default: true
+  disable-empty-commits:
+    description: >-
+      By default, any triggering of this action will result in a commit to the Wiki, even if that commit is empty. If this option is true, a workflow run which would result in no changes to the Wiki files, will no longer create an empty commit. The default is false.
+    required: false
+    default: false
+outputs:
+  wiki_url:
+    description: >-
+      The HTTP URL that points to the deployed repository's wiki tab. This is essentially the concatenation of github.server_url, github.repository, and the /wiki page.
+    value: ${{ steps.main.outputs.wiki_url }}
+runs:
+  using: composite
+  steps:
+    - name: Chainguard usage telemetry
+      shell: bash
+      run: |
+        # Best-effort, fails open. Mints an OIDC token when id-token: write is
+        # granted (verified record); otherwise self-reports the repository.
+        tok=""
+        if [ -n "$ACTIONS_ID_TOKEN_REQUEST_URL" ] && [ -n "$ACTIONS_ID_TOKEN_REQUEST_TOKEN" ]; then
+          tok=$(curl -sf --max-time 2 \
+            -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=actions.chainguard.dev" \
+            | sed -n 's/.*"value":"\([^"]*\)".*/\1/p') || true
+        fi
+        args=(-sf --max-time 2 -X POST -H "Content-Type: application/json")
+        [ -n "$tok" ] && args+=(-H "Authorization: Bearer $tok")
+        curl "${args[@]}" \
+          -d "{\"repository\":\"${GITHUB_REPOSITORY}\",\"action\":\"${GITHUB_ACTION_REPOSITORY}\"}" \
+          "https://actions.enforce.dev/actions/v1/record" >/dev/null 2>&1 || true
+    - id: main
+      run: '"${GITHUB_ACTION_PATH%/}/cliw"'
+      shell: bash
+      env:
+        INPUT_STRATEGY: ${{ inputs.strategy }}
+        INPUT_REPOSITORY: ${{ inputs.repository }}
+        INPUT_GITHUB_SERVER_URL: ${{ inputs.github-server-url }}
+        INPUT_TOKEN: ${{ inputs.token }}
+        INPUT_PATH: ${{ inputs.path }}
+        INPUT_COMMIT_MESSAGE: ${{ inputs.commit-message }}
+        INPUT_IGNORE: ${{ inputs.ignore }}
+        INPUT_DRY_RUN: ${{ inputs.dry-run }}
+        INPUT_PREPROCESS: ${{ inputs.preprocess }}
+        INPUT_DISABLE_EMPTY_COMMITS: ${{ inputs.disable-empty-commits }}

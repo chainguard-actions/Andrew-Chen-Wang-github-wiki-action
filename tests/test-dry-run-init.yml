@@ -1,0 +1,72 @@
+name: Test dry-run init strategy
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up local bare git repo to act as wiki
+        run: |
+          mkdir -p /tmp/fakewiki-init
+          git init --bare /tmp/fakewiki-init/testrepo.wiki.git
+          # Add an initial commit so git fetch doesn't fail on empty repo
+          git clone /tmp/fakewiki-init/testrepo.wiki.git /tmp/fakewiki-init-work
+          cd /tmp/fakewiki-init-work
+          git config user.email "test@test.com"
+          git config user.name "Test"
+          echo "# Home" > Home.md
+          git add Home.md
+          git commit -m "Initial commit"
+          git push origin HEAD:master
+          cd -
+
+      - name: Mock gh CLI to avoid auth issues
+        run: |
+          mkdir -p /tmp/mock-bin-init
+          cat > /tmp/mock-bin-init/gh << 'EOF'
+          #!/bin/sh
+          # Mock gh - just succeed silently
+          exit 0
+          EOF
+          chmod +x /tmp/mock-bin-init/gh
+          echo "/tmp/mock-bin-init" >> $GITHUB_PATH
+
+      - name: Create wiki content directory
+        run: |
+          mkdir -p wiki-init
+          echo "# Home" > wiki-init/Home.md
+          echo "This is the home page." >> wiki-init/Home.md
+
+      - id: action
+        uses: .
+        with:
+          strategy: init
+          path: wiki-init
+          dry-run: "true"
+          token: "dummy-token"
+          repository: testrepo
+          github-server-url: "file:///tmp/fakewiki-init"
+
+      - name: Assert wiki_url output is set
+        env:
+          WIKI_URL: ${{ steps.action.outputs.wiki_url }}
+        run: |
+          echo "wiki_url: $WIKI_URL"
+          if [ -z "$WIKI_URL" ]; then
+            echo "FAIL: wiki_url output is empty"
+            exit 1
+          fi
+          echo "PASS: wiki_url is set to $WIKI_URL"
+
+      - name: Assert wiki_url contains /wiki
+        env:
+          WIKI_URL: ${{ steps.action.outputs.wiki_url }}
+        run: |
+          echo "wiki_url: $WIKI_URL"
+          if [[ "$WIKI_URL" != *"/wiki"* ]]; then
+            echo "FAIL: wiki_url does not contain '/wiki'"
+            exit 1
+          fi
+          echo "PASS: wiki_url contains /wiki"

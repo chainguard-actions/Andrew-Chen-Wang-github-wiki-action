@@ -1,0 +1,72 @@
+name: Test dry-run clone strategy
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up local bare git repo to act as wiki
+        run: |
+          mkdir -p /tmp/fakewiki
+          git init --bare /tmp/fakewiki/testrepo.wiki.git
+          # Create a temp clone, add a commit, push to bare repo
+          git clone /tmp/fakewiki/testrepo.wiki.git /tmp/fakewiki-work
+          cd /tmp/fakewiki-work
+          git config user.email "test@test.com"
+          git config user.name "Test"
+          echo "# Home" > Home.md
+          git add Home.md
+          git commit -m "Initial commit"
+          git push origin HEAD:master
+          cd -
+
+      - name: Mock gh CLI to avoid auth issues
+        run: |
+          mkdir -p /tmp/mock-bin
+          cat > /tmp/mock-bin/gh << 'EOF'
+          #!/bin/sh
+          # Mock gh - just succeed silently
+          exit 0
+          EOF
+          chmod +x /tmp/mock-bin/gh
+          echo "/tmp/mock-bin" >> $GITHUB_PATH
+
+      - name: Create wiki content directory
+        run: |
+          mkdir -p wiki
+          echo "# Home" > wiki/Home.md
+          echo "# About" > wiki/About.md
+
+      - id: action
+        uses: .
+        with:
+          strategy: clone
+          path: wiki
+          dry-run: "true"
+          token: "dummy-token"
+          repository: testrepo
+          github-server-url: "file:///tmp/fakewiki"
+
+      - name: Assert wiki_url output is set
+        env:
+          WIKI_URL: ${{ steps.action.outputs.wiki_url }}
+        run: |
+          echo "wiki_url: $WIKI_URL"
+          if [ -z "$WIKI_URL" ]; then
+            echo "FAIL: wiki_url output is empty"
+            exit 1
+          fi
+          echo "PASS: wiki_url is set to $WIKI_URL"
+
+      - name: Assert wiki_url contains /wiki
+        env:
+          WIKI_URL: ${{ steps.action.outputs.wiki_url }}
+        run: |
+          echo "wiki_url: $WIKI_URL"
+          if [[ "$WIKI_URL" != *"/wiki"* ]]; then
+            echo "FAIL: wiki_url does not contain '/wiki'"
+            exit 1
+          fi
+          echo "PASS: wiki_url contains /wiki"
