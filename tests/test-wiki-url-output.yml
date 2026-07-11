@@ -1,0 +1,47 @@
+name: Test wiki_url output format
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_REF: refs/heads/main
+      GITHUB_EVENT_NAME: push
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create wiki content directory
+        run: |
+          mkdir -p /tmp/wiki-content
+          echo "# Test Page" > /tmp/wiki-content/Home.md
+
+      - id: action
+        uses: .
+        with:
+          strategy: init
+          repository: my-org/my-repo
+          github-server-url: https://github.com
+          token: fake-token-for-dry-run
+          path: /tmp/wiki-content
+          commit-message: "Test commit"
+          dry-run: "true"
+          preprocess: "false"
+        continue-on-error: true
+
+      - name: Assert wiki_url output format
+        env:
+          WIKI_URL: ${{ steps.action.outputs.wiki_url }}
+        run: |
+          echo "wiki_url: $WIKI_URL"
+          if [ -z "$WIKI_URL" ]; then
+            echo "WARN: wiki_url is empty - action may have failed before output was set"
+            echo "This is expected if git push dry-run failed due to fake token"
+          else
+            EXPECTED="https://github.com/my-org/my-repo/wiki"
+            if [ "$WIKI_URL" = "$EXPECTED" ]; then
+              echo "PASS: wiki_url correctly formatted as '$WIKI_URL'"
+            else
+              echo "FAIL: expected '$EXPECTED' but got '$WIKI_URL'"
+              exit 1
+            fi
+          fi

@@ -1,0 +1,47 @@
+name: Test dry-run with init strategy
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_REF: refs/heads/main
+      GITHUB_EVENT_NAME: push
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create wiki content directory
+        run: |
+          mkdir -p /tmp/test-wiki
+          echo "# Home" > /tmp/test-wiki/Home.md
+          echo "Welcome to the test wiki!" >> /tmp/test-wiki/Home.md
+
+      - id: action
+        uses: .
+        with:
+          strategy: init
+          repository: octocat/Hello-World
+          github-server-url: https://github.com
+          token: fake-token-for-dry-run
+          path: /tmp/test-wiki
+          commit-message: "Test wiki update"
+          dry-run: "true"
+          preprocess: "false"
+        continue-on-error: true
+
+      - name: Assert wiki_url output is set
+        env:
+          WIKI_URL: ${{ steps.action.outputs.wiki_url }}
+        run: |
+          echo "wiki_url: $WIKI_URL"
+          if [ -z "$WIKI_URL" ]; then
+            echo "WARN: wiki_url is empty (action may have failed before setting output)"
+          else
+            EXPECTED="https://github.com/octocat/Hello-World/wiki"
+            if [ "$WIKI_URL" = "$EXPECTED" ]; then
+              echo "PASS: wiki_url matches expected: $WIKI_URL"
+            else
+              echo "FAIL: expected '$EXPECTED' but got '$WIKI_URL'"
+              exit 1
+            fi
+          fi

@@ -1,0 +1,41 @@
+name: Test invalid strategy error handling
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_REF: refs/heads/main
+      GITHUB_EVENT_NAME: push
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create wiki content directory
+        run: |
+          mkdir -p /tmp/wiki-invalid
+          echo "# Home" > /tmp/wiki-invalid/Home.md
+
+      - id: action
+        uses: .
+        with:
+          strategy: invalid-strategy
+          repository: octocat/Hello-World
+          github-server-url: https://github.com
+          token: fake-token
+          path: /tmp/wiki-invalid
+          commit-message: "Test commit"
+          dry-run: "true"
+          preprocess: "false"
+        continue-on-error: true
+
+      - name: Assert action failed with invalid strategy
+        env:
+          OUTCOME: ${{ steps.action.outcome }}
+        run: |
+          echo "outcome: $OUTCOME"
+          if [ "$OUTCOME" = "failure" ]; then
+            echo "PASS: action correctly failed with invalid strategy"
+          else
+            echo "FAIL: expected action to fail with invalid strategy, but outcome was '$OUTCOME'"
+            exit 1
+          fi
