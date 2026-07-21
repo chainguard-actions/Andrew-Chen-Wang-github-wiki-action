@@ -1,0 +1,79 @@
+name: Test basic dry-run (clone strategy)
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up mock gh CLI
+        run: |
+          mkdir -p /tmp/mock-bin
+          cp "$GITHUB_WORKSPACE/tests/fixtures/mock-gh.sh" /tmp/mock-bin/gh
+          chmod +x /tmp/mock-bin/gh
+          echo "/tmp/mock-bin" >> "$GITHUB_PATH"
+
+      - name: Set up local bare wiki git repo
+        run: |
+          mkdir -p /tmp/wikis/test
+          git init --bare /tmp/wikis/test/repo.wiki.git
+          TMPCLONE=$(mktemp -d)
+          git -C "$TMPCLONE" init
+          git -C "$TMPCLONE" config user.email "test@example.com"
+          git -C "$TMPCLONE" config user.name "Test"
+          echo "# Home" > "$TMPCLONE/Home.md"
+          git -C "$TMPCLONE" add Home.md
+          git -C "$TMPCLONE" commit -m "init"
+          git -C "$TMPCLONE" remote add origin /tmp/wikis/test/repo.wiki.git
+          git -C "$TMPCLONE" push origin HEAD:master
+          rm -rf "$TMPCLONE"
+
+      - name: Create wiki content directory
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/test-wiki"
+          echo "# Home" > "$GITHUB_WORKSPACE/test-wiki/Home.md"
+
+      - id: action
+        uses: .
+        with:
+          strategy: clone
+          path: test-wiki
+          dry-run: "true"
+          preprocess: "false"
+          token: ${{ github.token }}
+          repository: test/repo
+          github-server-url: file:///tmp/wikis
+
+      - name: Assert wiki_url output is set
+        env:
+          WIKI_URL: ${{ steps.action.outputs.wiki_url }}
+        run: |
+          echo "wiki_url: $WIKI_URL"
+          if [ -z "$WIKI_URL" ]; then
+            echo "FAIL: wiki_url output is empty"
+            exit 1
+          fi
+          echo "PASS: wiki_url is set"
+
+      - name: Assert wiki_url contains /wiki
+        env:
+          WIKI_URL: ${{ steps.action.outputs.wiki_url }}
+        run: |
+          echo "wiki_url: $WIKI_URL"
+          if ! echo "$WIKI_URL" | grep -q "/wiki"; then
+            echo "FAIL: wiki_url does not contain '/wiki'"
+            exit 1
+          fi
+          echo "PASS: wiki_url contains /wiki"
+
+      - name: Assert wiki_url contains repository name
+        env:
+          WIKI_URL: ${{ steps.action.outputs.wiki_url }}
+        run: |
+          echo "wiki_url: $WIKI_URL"
+          if ! echo "$WIKI_URL" | grep -q "test/repo"; then
+            echo "FAIL: wiki_url does not contain repository name 'test/repo'"
+            exit 1
+          fi
+          echo "PASS: wiki_url contains repository name"

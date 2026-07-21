@@ -1,0 +1,68 @@
+name: Test dry-run clone strategy
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Setup fake gh and local git remote
+        run: |
+          # Create a fake gh command that does nothing (avoids auth issues)
+          mkdir -p /tmp/fake-bin
+          cat > /tmp/fake-bin/gh << 'GHEOF'
+          #!/bin/sh
+          exit 0
+          GHEOF
+          chmod +x /tmp/fake-bin/gh
+          echo "/tmp/fake-bin" >> "$GITHUB_PATH"
+
+          # Create a local bare git repo to act as the wiki remote
+          git init --bare --initial-branch=master /tmp/wiki-clone-test.wiki.git || \
+            git init --bare /tmp/wiki-clone-test.wiki.git
+          # Set HEAD to master explicitly
+          echo "ref: refs/heads/master" > /tmp/wiki-clone-test.wiki.git/HEAD
+          # Add an initial commit so clone doesn't warn about empty repo
+          tmpclone=$(mktemp -d)
+          git -C "$tmpclone" init -b master || git -C "$tmpclone" init
+          git -C "$tmpclone" config user.email "test@test.com"
+          git -C "$tmpclone" config user.name "Test"
+          echo "# Initial" > "$tmpclone/Home.md"
+          git -C "$tmpclone" add Home.md
+          git -C "$tmpclone" commit -m "init"
+          git -C "$tmpclone" remote add origin /tmp/wiki-clone-test.wiki.git
+          git -C "$tmpclone" push origin HEAD:master
+          rm -rf "$tmpclone"
+
+      - name: Create wiki content directory
+        run: |
+          mkdir -p wiki
+          echo "# Home" > wiki/Home.md
+          echo "Welcome to the wiki." >> wiki/Home.md
+
+      - id: action
+        uses: .
+        with:
+          strategy: clone
+          repository: wiki-clone-test
+          github-server-url: file:///tmp
+          path: wiki
+          dry-run: "true"
+          token: fake-token-for-dry-run
+          preprocess: "false"
+
+      - name: Assert wiki_url output is set
+        env:
+          ACTUAL: ${{ steps.action.outputs.wiki_url }}
+        run: |
+          echo "actual wiki_url: $ACTUAL"
+          if [ -z "$ACTUAL" ]; then
+            echo "FAIL: wiki_url output is empty"
+            exit 1
+          fi
+          if [[ "$ACTUAL" != *"wiki-clone-test"* ]]; then
+            echo "FAIL: wiki_url does not contain expected repository name"
+            exit 1
+          fi
+          echo "PASS"

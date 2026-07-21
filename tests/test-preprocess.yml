@@ -1,0 +1,56 @@
+name: Test preprocess feature
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Setup fake gh and local git remote
+        run: |
+          # Create a fake gh command that does nothing (avoids auth issues)
+          mkdir -p /tmp/fake-bin
+          cat > /tmp/fake-bin/gh << 'GHEOF'
+          #!/bin/sh
+          exit 0
+          GHEOF
+          chmod +x /tmp/fake-bin/gh
+          echo "/tmp/fake-bin" >> "$GITHUB_PATH"
+
+          # Create a local bare git repo to act as the wiki remote
+          git init --bare /tmp/wiki-preprocess-test.wiki.git
+
+      - name: Create wiki content directory with README
+        run: |
+          mkdir -p wiki
+          echo "# Home" > wiki/README.md
+          echo "See [Guide](Guide.md) for more info." >> wiki/README.md
+          echo "# Guide" > wiki/Guide.md
+          echo "This is the guide." >> wiki/Guide.md
+
+      - id: action
+        uses: .
+        with:
+          strategy: init
+          repository: wiki-preprocess-test
+          github-server-url: file:///tmp
+          path: wiki
+          dry-run: "true"
+          token: fake-token-for-dry-run
+          preprocess: "true"
+
+      - name: Assert wiki_url output is set
+        env:
+          ACTUAL: ${{ steps.action.outputs.wiki_url }}
+        run: |
+          echo "actual wiki_url: $ACTUAL"
+          if [ -z "$ACTUAL" ]; then
+            echo "FAIL: wiki_url output is empty"
+            exit 1
+          fi
+          if [[ "$ACTUAL" != *"wiki-preprocess-test"* ]]; then
+            echo "FAIL: wiki_url does not contain expected repository name"
+            exit 1
+          fi
+          echo "PASS"
