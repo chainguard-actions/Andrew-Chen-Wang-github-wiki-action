@@ -1,4 +1,4 @@
-name: Test disable-empty-commits option
+name: Test dry-run clone strategy
 on:
   workflow_dispatch:
 jobs:
@@ -12,6 +12,8 @@ jobs:
           mkdir -p wiki
           echo "# Home" > wiki/README.md
           echo "Welcome to the wiki!" >> wiki/README.md
+          echo "# About" > wiki/About.md
+          echo "This is the about page." >> wiki/About.md
 
       - name: Set up mock git and gh to intercept wiki operations
         run: |
@@ -55,9 +57,8 @@ jobs:
           strategy: clone
           path: wiki
           dry-run: "true"
-          preprocess: "false"
-          disable-empty-commits: "true"
-          commit-message: "Test disable-empty-commits"
+          preprocess: "true"
+          commit-message: "Test commit"
 
       - name: Assert wiki_url output is set
         env:
@@ -72,4 +73,17 @@ jobs:
             echo "FAIL: wiki_url does not end with /wiki: $ACTUAL"
             exit 1
           fi
-          echo "PASS: disable-empty-commits scenario completed successfully"
+          echo "PASS: wiki_url is set to $ACTUAL"
+
+      - name: Assert wiki_url contains repository name
+        env:
+          ACTUAL: ${{ steps.action.outputs.wiki_url }}
+          REPO: ${{ github.repository }}
+        run: |
+          echo "actual wiki_url: $ACTUAL"
+          echo "expected repo: $REPO"
+          if ! echo "$ACTUAL" | grep -qF "$REPO"; then
+            echo "FAIL: wiki_url does not contain repository name"
+            exit 1
+          fi
+          echo "PASS: wiki_url contains repository name"

@@ -1,54 +1,76 @@
-name: Test preprocess option (README.md to Home.md)
+name: Test preprocess option
 on:
   workflow_dispatch:
 jobs:
   test:
     runs-on: ubuntu-latest
-    env:
-      GITHUB_REF: refs/heads/main
-      GITHUB_EVENT_NAME: push
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - name: Create wiki content with README.md
+      - name: Create wiki content with README and .md links
         run: |
-          mkdir -p /tmp/wiki-preprocess
-          echo "# Home" > /tmp/wiki-preprocess/README.md
-          echo "Welcome to the wiki!" >> /tmp/wiki-preprocess/README.md
-          echo "See [other page](other.md) for more." >> /tmp/wiki-preprocess/README.md
-          echo "# Other" > /tmp/wiki-preprocess/other.md
+          mkdir -p wiki
+          echo "# Home" > wiki/README.md
+          echo "See [About](About.md) for more info." >> wiki/README.md
+          echo "# About" > wiki/About.md
+          echo "This is the about page." >> wiki/About.md
+
+      - name: Set up mock git and gh to intercept wiki operations
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/.mock-bin"
+
+          # Mock gh: no-op for auth setup-git
+          printf '%s\n' '#!/bin/sh' \
+            'if [ "$1" = "auth" ] && [ "$2" = "setup-git" ]; then' \
+            '  exit 0' \
+            'fi' \
+            'exec /usr/bin/gh "$@"' \
+            > "$GITHUB_WORKSPACE/.mock-bin/gh"
+          chmod +x "$GITHUB_WORKSPACE/.mock-bin/gh"
+
+          # Mock git: intercept wiki.git clone and push --dry-run
+          printf '%s\n' '#!/bin/sh' \
+            'for arg in "$@"; do' \
+            '  case "$arg" in' \
+            '    *.wiki.git)' \
+            '      /usr/bin/git init -b master .' \
+            '      /usr/bin/git -c user.email="test@example.com" -c user.name="Test" commit --allow-empty -m "Initial wiki commit"' \
+            '      exit 0' \
+            '      ;;' \
+            '  esac' \
+            'done' \
+            'case "$*" in' \
+            '  *push*--dry-run*)' \
+            '    echo "Everything up-to-date (dry-run)"' \
+            '    exit 0' \
+            '    ;;' \
+            'esac' \
+            'exec /usr/bin/git "$@"' \
+            > "$GITHUB_WORKSPACE/.mock-bin/git"
+          chmod +x "$GITHUB_WORKSPACE/.mock-bin/git"
+
+          echo "$GITHUB_WORKSPACE/.mock-bin" >> "$GITHUB_PATH"
 
       - id: action
         uses: .
         with:
-          strategy: init
-          repository: octocat/Hello-World
-          github-server-url: https://github.com
-          token: fake-token-for-dry-run
-          path: /tmp/wiki-preprocess
-          commit-message: "Test preprocess"
+          strategy: clone
+          path: wiki
           dry-run: "true"
           preprocess: "true"
-        continue-on-error: true
+          commit-message: "Test preprocess"
 
-      - name: Assert action ran (preprocess scenario)
+      - name: Assert wiki_url output is set after preprocess
         env:
-          OUTCOME: ${{ steps.action.outcome }}
-          WIKI_URL: ${{ steps.action.outputs.wiki_url }}
+          ACTUAL: ${{ steps.action.outputs.wiki_url }}
         run: |
-          echo "outcome: $OUTCOME"
-          echo "wiki_url: $WIKI_URL"
-          # The action may fail at git push dry-run due to fake token,
-          # but if wiki_url is set, preprocess ran successfully before the push
-          if [ -n "$WIKI_URL" ]; then
-            EXPECTED="https://github.com/octocat/Hello-World/wiki"
-            if [ "$WIKI_URL" = "$EXPECTED" ]; then
-              echo "PASS: action completed preprocess and set wiki_url correctly"
-            else
-              echo "FAIL: wiki_url '$WIKI_URL' does not match expected '$EXPECTED'"
-              exit 1
-            fi
-          else
-            echo "INFO: wiki_url not set (action failed before output - likely auth failure at git push)"
-            echo "INFO: This is expected behavior when using a fake token"
+          echo "actual wiki_url: $ACTUAL"
+          if [ -z "$ACTUAL" ]; then
+            echo "FAIL: wiki_url output is empty"
+            exit 1
           fi
+          if ! echo "$ACTUAL" | grep -q '/wiki$'; then
+            echo "FAIL: wiki_url does not end with /wiki"
+            exit 1
+          fi
+          echo "PASS: preprocess scenario completed successfully"

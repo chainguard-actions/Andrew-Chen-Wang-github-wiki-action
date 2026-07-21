@@ -1,47 +1,69 @@
-name: Test dry-run with init strategy
+name: Test dry-run init strategy
 on:
   workflow_dispatch:
 jobs:
   test:
     runs-on: ubuntu-latest
-    env:
-      GITHUB_REF: refs/heads/main
-      GITHUB_EVENT_NAME: push
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Create wiki content directory
         run: |
-          mkdir -p /tmp/test-wiki
-          echo "# Home" > /tmp/test-wiki/Home.md
-          echo "Welcome to the test wiki!" >> /tmp/test-wiki/Home.md
+          mkdir -p wiki
+          echo "# Home" > wiki/README.md
+          echo "Welcome to the wiki!" >> wiki/README.md
+
+      - name: Set up mock git and gh to intercept wiki operations
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/.mock-bin"
+
+          # Mock gh: no-op for auth setup-git
+          printf '%s\n' '#!/bin/sh' \
+            'if [ "$1" = "auth" ] && [ "$2" = "setup-git" ]; then' \
+            '  exit 0' \
+            'fi' \
+            'exec /usr/bin/gh "$@"' \
+            > "$GITHUB_WORKSPACE/.mock-bin/gh"
+          chmod +x "$GITHUB_WORKSPACE/.mock-bin/gh"
+
+          # Mock git: intercept fetch (wiki may not exist) and push --dry-run
+          printf '%s\n' '#!/bin/sh' \
+            'if [ "$1" = "fetch" ]; then' \
+            '  echo "From wiki (mocked fetch - no-op)"' \
+            '  exit 0' \
+            'fi' \
+            'case "$*" in' \
+            '  *push*--dry-run*)' \
+            '    echo "Everything up-to-date (dry-run)"' \
+            '    exit 0' \
+            '    ;;' \
+            'esac' \
+            'exec /usr/bin/git "$@"' \
+            > "$GITHUB_WORKSPACE/.mock-bin/git"
+          chmod +x "$GITHUB_WORKSPACE/.mock-bin/git"
+
+          echo "$GITHUB_WORKSPACE/.mock-bin" >> "$GITHUB_PATH"
 
       - id: action
         uses: .
         with:
           strategy: init
-          repository: octocat/Hello-World
-          github-server-url: https://github.com
-          token: fake-token-for-dry-run
-          path: /tmp/test-wiki
-          commit-message: "Test wiki update"
+          path: wiki
           dry-run: "true"
           preprocess: "false"
-        continue-on-error: true
+          commit-message: "Test init strategy"
 
       - name: Assert wiki_url output is set
         env:
-          WIKI_URL: ${{ steps.action.outputs.wiki_url }}
+          ACTUAL: ${{ steps.action.outputs.wiki_url }}
         run: |
-          echo "wiki_url: $WIKI_URL"
-          if [ -z "$WIKI_URL" ]; then
-            echo "WARN: wiki_url is empty (action may have failed before setting output)"
-          else
-            EXPECTED="https://github.com/octocat/Hello-World/wiki"
-            if [ "$WIKI_URL" = "$EXPECTED" ]; then
-              echo "PASS: wiki_url matches expected: $WIKI_URL"
-            else
-              echo "FAIL: expected '$EXPECTED' but got '$WIKI_URL'"
-              exit 1
-            fi
+          echo "actual wiki_url: $ACTUAL"
+          if [ -z "$ACTUAL" ]; then
+            echo "FAIL: wiki_url output is empty"
+            exit 1
           fi
+          if ! echo "$ACTUAL" | grep -q '/wiki$'; then
+            echo "FAIL: wiki_url does not end with /wiki: $ACTUAL"
+            exit 1
+          fi
+          echo "PASS: wiki_url is set correctly for init strategy"

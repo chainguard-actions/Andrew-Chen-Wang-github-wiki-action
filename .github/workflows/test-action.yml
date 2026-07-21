@@ -35,7 +35,7 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2
         with:
           deno-version: v2.8.3
@@ -48,7 +48,7 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: ./
         with:
           strategy: clone
@@ -61,7 +61,7 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: ./
         with:
           strategy: init
@@ -75,7 +75,7 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: ./
         with:
           strategy: clone
@@ -90,7 +90,7 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: ./
         with:
           strategy: init
@@ -108,7 +108,7 @@ jobs:
       contents: write
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: ./
       - name: Verify pushed wiki contents
         run: |
@@ -117,8 +117,8 @@ jobs:
           # README.md is renamed to Home.md by the preprocess step; every
           # other file must match the wiki/ source tree exactly by name.
           diff \
-            <(cd wiki && find . -type f | sed 's|^\./||; s|^README\.md$|Home.md|' | sort) \
-            <(cd /tmp/wiki-verify && find . -name .git -prune -o -type f -print | sed 's|^\./||' | sort)
+            <(cd wiki && find . -type f | sed 's|^./||; s|^README\.md$|Home.md|' | sort) \
+            <(cd /tmp/wiki-verify && find . -name .git -prune -o -type f -print | sed 's|^./||' | sort)
           test -s /tmp/wiki-verify/Home.md
         env:
           GH_TOKEN: ${{ github.token }}
