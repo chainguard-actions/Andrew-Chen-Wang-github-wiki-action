@@ -24,11 +24,6 @@ if [ ! -d "$deno_dir" ]; then
   export DENO_INSTALL=$deno_dir
   _install_script=$(mktemp)
   curl -fsSL -o "$_install_script" https://deno.land/x/install/install.sh
-  if [ ! -s "$_install_script" ]; then
-    echo "Error: downloaded installer script is empty" >&2
-    rm -f "$_install_script"
-    exit 1
-  fi
   chronic sh "$_install_script" -s "v1.35.1"
   rm -f "$_install_script"
 fi

@@ -1,4 +1,4 @@
-name: Test dry-run clone strategy
+name: Test disable-empty-commits feature
 on:
   workflow_dispatch:
 jobs:
@@ -15,7 +15,6 @@ jobs:
         run: |
           mkdir -p wiki
           echo "# Hello Wiki" > wiki/README.md
-          echo "This is a test page." > wiki/test-page.md
 
       - name: Set up fake wiki git repo and mock gh command
         run: |
@@ -58,7 +57,8 @@ jobs:
           path: wiki
           dry-run: true
           preprocess: false
-          commit-message: "Test commit from dry-run-clone test"
+          disable-empty-commits: true
+          commit-message: "Test commit from disable-empty-commits test"
 
       - name: Assert wiki_url output is set
         env:
@@ -71,7 +71,7 @@ jobs:
           fi
           echo "PASS: wiki_url is set to $WIKI_URL"
 
-      - name: Assert wiki_url contains expected repo path
+      - name: Assert wiki_url contains expected repo name
         env:
           WIKI_URL: ${{ steps.action.outputs.wiki_url }}
         run: |

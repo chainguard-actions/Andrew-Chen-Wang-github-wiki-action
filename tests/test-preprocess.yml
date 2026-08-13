@@ -1,55 +1,66 @@
-name: Test preprocess README to Home
+name: Test preprocess feature
 on:
   workflow_dispatch:
 jobs:
   test:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
 
-      - name: Set up local bare git repo to act as wiki
+      - name: Create wiki content with README and .md links
         run: |
-          mkdir -p /tmp/fakewiki-preprocess
-          git init --bare /tmp/fakewiki-preprocess/testrepo.wiki.git
-          git clone /tmp/fakewiki-preprocess/testrepo.wiki.git /tmp/fakewiki-preprocess-work
-          cd /tmp/fakewiki-preprocess-work
-          git config user.email "test@test.com"
-          git config user.name "Test"
+          mkdir -p wiki
+          echo "# Home Page" > wiki/README.md
+          echo "See [another page](./another-page.md) for more info." >> wiki/README.md
+          echo "# Another Page" > wiki/another-page.md
+          echo "Go back to [home](./README.md)." >> wiki/another-page.md
+
+      - name: Set up fake wiki git repo and mock gh command
+        run: |
+          FAKE_ROOT="$GITHUB_WORKSPACE/fakewiki-root"
+          FAKE_WIKI="$FAKE_ROOT/testorg/testrepo.wiki.git"
+          mkdir -p "$FAKE_ROOT/testorg"
+
+          git init --bare "$FAKE_WIKI"
+
+          SEED_DIR=$(mktemp -d)
+          cd "$SEED_DIR"
+          git init -b master
+          git config user.email "test@example.com"
+          git config user.name "Test User"
           echo "# Home" > Home.md
-          git add Home.md
-          git commit -m "Initial commit"
-          git push origin HEAD:master
-          cd -
+          git add .
+          git commit -m "Initial wiki"
+          git remote add origin "$FAKE_WIKI"
+          git push origin master
+          cd "$GITHUB_WORKSPACE"
 
-      - name: Mock gh CLI to avoid auth issues
-        run: |
-          mkdir -p /tmp/mock-bin-preprocess
-          cat > /tmp/mock-bin-preprocess/gh << 'EOF'
-          #!/bin/sh
-          # Mock gh - just succeed silently
-          exit 0
-          EOF
-          chmod +x /tmp/mock-bin-preprocess/gh
-          echo "/tmp/mock-bin-preprocess" >> $GITHUB_PATH
-
-      - name: Create wiki content with README.md
-        run: |
-          mkdir -p wiki-docs
-          echo "# Welcome" > wiki-docs/README.md
-          echo "This is the main page." >> wiki-docs/README.md
-          echo "# Other Page" > wiki-docs/Other.md
-          echo "See [README](README.md) for details." >> wiki-docs/Other.md
+          mkdir -p "$GITHUB_WORKSPACE/.fake-bin"
+          printf '%s\n' '#!/bin/sh' \
+            'if [ "$1" = "auth" ] && [ "$2" = "setup-git" ]; then' \
+            '  echo "Fake gh: auth setup-git (no-op)"' \
+            '  exit 0' \
+            'fi' \
+            'exec /usr/bin/gh "$@"' \
+            > "$GITHUB_WORKSPACE/.fake-bin/gh"
+          chmod +x "$GITHUB_WORKSPACE/.fake-bin/gh"
 
       - id: action
         uses: .
+        env:
+          PATH: ${{ github.workspace }}/.fake-bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
         with:
           strategy: clone
-          path: wiki-docs
-          dry-run: "true"
-          preprocess: "true"
-          token: "dummy-token"
-          repository: testrepo
-          github-server-url: "file:///tmp/fakewiki-preprocess"
+          repository: testorg/testrepo
+          github-server-url: file://${{ github.workspace }}/fakewiki-root
+          path: wiki
+          dry-run: true
+          preprocess: true
+          commit-message: "Test commit from preprocess test"
 
       - name: Assert wiki_url output is set
         env:
@@ -62,13 +73,14 @@ jobs:
           fi
           echo "PASS: wiki_url is set to $WIKI_URL"
 
-      - name: Assert wiki_url contains /wiki
+      - name: Assert wiki_url format is correct
         env:
           WIKI_URL: ${{ steps.action.outputs.wiki_url }}
         run: |
           echo "wiki_url: $WIKI_URL"
-          if [[ "$WIKI_URL" != *"/wiki"* ]]; then
-            echo "FAIL: wiki_url does not contain '/wiki'"
+          if echo "$WIKI_URL" | grep -qE '/wiki$'; then
+            echo "PASS: wiki_url ends with /wiki"
+          else
+            echo "FAIL: wiki_url does not end with /wiki"
             exit 1
           fi
-          echo "PASS: wiki_url contains /wiki"
