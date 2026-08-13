@@ -1,0 +1,52 @@
+name: Test basic dry-run (clone strategy)
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create wiki content directory
+        run: |
+          mkdir -p wiki
+          echo "# Home" > wiki/Home.md
+          echo "Welcome to the wiki." >> wiki/Home.md
+          echo "# About" > wiki/About.md
+
+      - name: Install mock git and gh to intercept wiki operations
+        run: |
+          sudo cp "$GITHUB_WORKSPACE/tests/fixtures/mock-git.sh" /usr/local/bin/git
+          sudo chmod +x /usr/local/bin/git
+          sudo cp "$GITHUB_WORKSPACE/tests/fixtures/mock-gh.sh" /usr/local/bin/gh
+          sudo chmod +x /usr/local/bin/gh
+
+      - id: action
+        uses: .
+        with:
+          strategy: clone
+          path: wiki
+          dry-run: "true"
+          preprocess: "false"
+
+      - name: Assert wiki_url output is set
+        env:
+          WIKI_URL: ${{ steps.action.outputs.wiki_url }}
+        run: |
+          echo "wiki_url: $WIKI_URL"
+          if [ -z "$WIKI_URL" ]; then
+            echo "FAIL: wiki_url output is empty"
+            exit 1
+          fi
+          echo "PASS: wiki_url is set to $WIKI_URL"
+
+      - name: Assert wiki_url contains /wiki
+        env:
+          WIKI_URL: ${{ steps.action.outputs.wiki_url }}
+        run: |
+          echo "wiki_url: $WIKI_URL"
+          if ! echo "$WIKI_URL" | grep -q "/wiki"; then
+            echo "FAIL: wiki_url does not contain '/wiki'"
+            exit 1
+          fi
+          echo "PASS: wiki_url contains /wiki"

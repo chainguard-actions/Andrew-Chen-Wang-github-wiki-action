@@ -1,0 +1,54 @@
+name: Test preprocess feature (README to Home)
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create wiki content with README.md
+        run: |
+          mkdir -p wiki
+          echo "# Home Page" > wiki/README.md
+          echo "This is the main page." >> wiki/README.md
+          echo "See [About](About.md) for more." >> wiki/README.md
+          echo "# About" > wiki/About.md
+          echo "About this project." >> wiki/About.md
+
+      - name: Install mock git and gh to intercept wiki operations
+        run: |
+          sudo cp "$GITHUB_WORKSPACE/tests/fixtures/mock-git.sh" /usr/local/bin/git
+          sudo chmod +x /usr/local/bin/git
+          sudo cp "$GITHUB_WORKSPACE/tests/fixtures/mock-gh.sh" /usr/local/bin/gh
+          sudo chmod +x /usr/local/bin/gh
+
+      - id: action
+        uses: .
+        with:
+          strategy: clone
+          path: wiki
+          dry-run: "true"
+          preprocess: "true"
+
+      - name: Assert wiki_url output is set
+        env:
+          WIKI_URL: ${{ steps.action.outputs.wiki_url }}
+        run: |
+          echo "wiki_url: $WIKI_URL"
+          if [ -z "$WIKI_URL" ]; then
+            echo "FAIL: wiki_url output is empty"
+            exit 1
+          fi
+          echo "PASS: wiki_url is set to $WIKI_URL"
+
+      - name: Assert wiki_url ends with /wiki
+        env:
+          WIKI_URL: ${{ steps.action.outputs.wiki_url }}
+        run: |
+          echo "wiki_url: $WIKI_URL"
+          if ! echo "$WIKI_URL" | grep -qE ".*/wiki$"; then
+            echo "FAIL: wiki_url does not end with /wiki"
+            exit 1
+          fi
+          echo "PASS: wiki_url ends with /wiki"

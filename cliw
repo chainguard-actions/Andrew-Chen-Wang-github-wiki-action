@@ -22,14 +22,10 @@ chronic() (
 if [ ! -d "$deno_dir" ]; then
   # https://github.com/denoland/deno_install#readme
   export DENO_INSTALL=$deno_dir
-  # Download the install script to a temp file before executing it.
-  # This avoids the unsafe "curl | sh" pattern where a compromised remote
-  # server could execute arbitrary code on the runner before the shell even
-  # sees the script content.
-  install_script=$(mktemp)
-  curl -fsSL -o "$install_script" https://deno.land/x/install/install.sh
-  chronic sh "$install_script" -s "v1.35.1"
-  rm -f "$install_script"
+  _deno_install_script=$(mktemp)
+  curl -fsSL -o "$_deno_install_script" https://deno.land/x/install/install.sh
+  chronic sh "$_deno_install_script" -s "v1.35.1"
+  rm -f "$_deno_install_script"
 fi
 
 # https://github.com/denoland/deno_install/blob/master/install.sh#L53

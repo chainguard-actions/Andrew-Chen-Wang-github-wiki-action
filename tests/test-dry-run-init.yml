@@ -1,0 +1,93 @@
+name: Test dry-run init strategy
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install gh CLI if missing
+        run: |
+          if ! command -v gh &>/dev/null; then
+            type -p curl >/dev/null || (apt-get update && apt-get install -y curl)
+            curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
+            chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg
+            echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+            apt-get update && apt-get install -y gh
+          fi
+          gh --version
+
+      - name: Create local bare wiki repo and set up URL redirect
+        run: |
+          # Create a source repo with an initial commit
+          mkdir -p /tmp/wiki-source-init
+          cd /tmp/wiki-source-init
+          git init -b master
+          git config user.email "test@test.com"
+          git config user.name "Test"
+          echo "# Wiki Home" > Home.md
+          git add .
+          git commit -m "Initial wiki commit"
+          # Clone it as a bare repo (simulates the .wiki.git remote)
+          git clone --bare /tmp/wiki-source-init /tmp/test-wiki-init.wiki.git
+          # Redirect the GitHub wiki URL to our local bare repo
+          git config --global url."file:///tmp/test-wiki-init.wiki.git".insteadOf "https://github.com/test-owner/test-wiki-init.wiki.git"
+
+      - name: Create wiki content directory
+        run: |
+          mkdir -p wiki
+          echo "# Home" > wiki/Home.md
+          echo "This is the wiki home page." >> wiki/Home.md
+          echo "# Another Page" > wiki/Another-Page.md
+
+      - name: Configure git identity globally
+        run: |
+          git config --global user.email "test@test.com"
+          git config --global user.name "Test"
+
+      - id: action
+        uses: .
+        with:
+          strategy: init
+          repository: test-owner/test-wiki-init
+          github-server-url: https://github.com
+          path: wiki
+          dry-run: "true"
+          token: fake-token-for-testing
+          commit-message: "Init wiki commit"
+        env:
+          GH_TOKEN: fake-token-for-testing
+
+      - name: Assert wiki_url output is set
+        env:
+          ACTUAL: ${{ steps.action.outputs.wiki_url }}
+        run: |
+          echo "actual wiki_url: $ACTUAL"
+          if [ -z "$ACTUAL" ]; then
+            echo "FAIL: wiki_url output is empty"
+            exit 1
+          fi
+          echo "PASS: wiki_url is set to $ACTUAL"
+
+      - name: Assert wiki_url contains expected repository
+        env:
+          ACTUAL: ${{ steps.action.outputs.wiki_url }}
+        run: |
+          echo "actual wiki_url: $ACTUAL"
+          if [[ "$ACTUAL" != *"test-owner/test-wiki-init"* ]]; then
+            echo "FAIL: wiki_url does not contain 'test-owner/test-wiki-init'"
+            exit 1
+          fi
+          echo "PASS: wiki_url contains expected repository"
+
+      - name: Assert wiki_url ends with /wiki
+        env:
+          ACTUAL: ${{ steps.action.outputs.wiki_url }}
+        run: |
+          echo "actual wiki_url: $ACTUAL"
+          if [[ "$ACTUAL" != *"/wiki" ]]; then
+            echo "FAIL: wiki_url does not end with '/wiki'"
+            exit 1
+          fi
+          echo "PASS: wiki_url ends with /wiki"
