@@ -1,0 +1,78 @@
+name: Test dry-run with init strategy
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_REF: refs/heads/main
+      GITHUB_EVENT_NAME: push
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install mock gh and deno
+        run: |
+          # Mock gh so that 'gh auth setup-git' is a no-op
+          mkdir -p /tmp/mock-bin
+          cat > /tmp/mock-bin/gh << 'EOF'
+          #!/bin/sh
+          exit 0
+          EOF
+          chmod +x /tmp/mock-bin/gh
+          echo "/tmp/mock-bin" >> $GITHUB_PATH
+
+      - name: Set up local bare git repo to act as wiki remote
+        run: |
+          mkdir -p /tmp/fakewiki/test/repo.wiki.git
+          git init --bare /tmp/fakewiki/test/repo.wiki.git
+          # Create an initial commit so fetch works
+          tmpwork=$(mktemp -d)
+          git -C "$tmpwork" init -b master
+          git -C "$tmpwork" config user.email "test@test.com"
+          git -C "$tmpwork" config user.name "Test"
+          echo "# Home" > "$tmpwork/Home.md"
+          git -C "$tmpwork" add .
+          git -C "$tmpwork" commit -m "init"
+          git -C "$tmpwork" remote add origin /tmp/fakewiki/test/repo.wiki.git
+          git -C "$tmpwork" push origin master
+
+      - name: Create wiki content directory
+        run: |
+          mkdir -p /tmp/wiki-content
+          echo "# Home" > /tmp/wiki-content/README.md
+          echo "Hello from the wiki!" >> /tmp/wiki-content/README.md
+
+      - id: action
+        uses: .
+        with:
+          strategy: init
+          repository: test/repo
+          github-server-url: file:///tmp/fakewiki
+          token: dummy-token
+          path: /tmp/wiki-content
+          commit-message: Test wiki update
+          dry-run: "true"
+          preprocess: "true"
+
+      - name: Assert wiki_url output is set
+        env:
+          ACTUAL: ${{ steps.action.outputs.wiki_url }}
+        run: |
+          echo "actual wiki_url: $ACTUAL"
+          if [ -z "$ACTUAL" ]; then
+            echo "FAIL: wiki_url output is empty"
+            exit 1
+          fi
+          echo "PASS: wiki_url is set to $ACTUAL"
+
+      - name: Assert wiki_url contains expected repo path
+        env:
+          ACTUAL: ${{ steps.action.outputs.wiki_url }}
+        run: |
+          echo "actual wiki_url: $ACTUAL"
+          EXPECTED="file:///tmp/fakewiki/test/repo/wiki"
+          if [ "$ACTUAL" != "$EXPECTED" ]; then
+            echo "FAIL: expected '$EXPECTED' but got '$ACTUAL'"
+            exit 1
+          fi
+          echo "PASS: wiki_url matches expected value"

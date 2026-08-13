@@ -1,0 +1,59 @@
+name: Test basic dry-run (clone strategy)
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up fake git and gh to intercept network calls
+        run: |
+          FAKE_BIN="$GITHUB_WORKSPACE/tests/fixtures/fake-bin"
+          chmod +x "$FAKE_BIN/git" "$FAKE_BIN/gh"
+          echo "$FAKE_BIN" >> $GITHUB_PATH
+
+      - id: action
+        uses: .
+        with:
+          strategy: clone
+          path: tests/fixtures/wiki
+          dry-run: "true"
+          preprocess: "true"
+          token: ${{ github.token }}
+          repository: ${{ github.repository }}
+
+      - name: Assert wiki_url output is set
+        env:
+          WIKI_URL: ${{ steps.action.outputs.wiki_url }}
+        run: |
+          echo "wiki_url: $WIKI_URL"
+          if [ -z "$WIKI_URL" ]; then
+            echo "FAIL: wiki_url output is empty"
+            exit 1
+          fi
+          echo "PASS: wiki_url is set"
+
+      - name: Assert wiki_url contains repository
+        env:
+          WIKI_URL: ${{ steps.action.outputs.wiki_url }}
+          REPO: ${{ github.repository }}
+        run: |
+          echo "wiki_url: $WIKI_URL"
+          echo "repository: $REPO"
+          if ! echo "$WIKI_URL" | grep -q "$REPO"; then
+            echo "FAIL: wiki_url does not contain repository name"
+            exit 1
+          fi
+          echo "PASS: wiki_url contains repository name"
+
+      - name: Assert wiki_url ends with /wiki
+        env:
+          WIKI_URL: ${{ steps.action.outputs.wiki_url }}
+        run: |
+          echo "wiki_url: $WIKI_URL"
+          if ! echo "$WIKI_URL" | grep -qE '/wiki$'; then
+            echo "FAIL: wiki_url does not end with /wiki"
+            exit 1
+          fi
+          echo "PASS: wiki_url ends with /wiki"

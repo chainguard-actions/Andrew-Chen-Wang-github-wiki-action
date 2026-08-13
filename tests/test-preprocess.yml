@@ -1,0 +1,50 @@
+name: Test preprocess feature
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up fake git and gh to intercept network calls
+        run: |
+          FAKE_BIN="$GITHUB_WORKSPACE/tests/fixtures/fake-bin"
+          chmod +x "$FAKE_BIN/git" "$FAKE_BIN/gh"
+          echo "$FAKE_BIN" >> $GITHUB_PATH
+
+      - id: action
+        uses: .
+        with:
+          strategy: init
+          path: tests/fixtures/wiki
+          dry-run: "true"
+          preprocess: "true"
+          token: ${{ github.token }}
+          repository: ${{ github.repository }}
+
+      - name: Assert wiki_url output is set
+        env:
+          WIKI_URL: ${{ steps.action.outputs.wiki_url }}
+        run: |
+          echo "wiki_url: $WIKI_URL"
+          if [ -z "$WIKI_URL" ]; then
+            echo "FAIL: wiki_url output is empty"
+            exit 1
+          fi
+          echo "PASS: wiki_url is set (preprocess ran successfully)"
+
+      - name: Assert wiki_url format is correct
+        env:
+          WIKI_URL: ${{ steps.action.outputs.wiki_url }}
+          SERVER_URL: ${{ github.server_url }}
+          REPO: ${{ github.repository }}
+        run: |
+          echo "wiki_url: $WIKI_URL"
+          EXPECTED="${SERVER_URL}/${REPO}/wiki"
+          echo "expected: $EXPECTED"
+          if [ "$WIKI_URL" != "$EXPECTED" ]; then
+            echo "FAIL: wiki_url does not match expected format"
+            exit 1
+          fi
+          echo "PASS: wiki_url format is correct"

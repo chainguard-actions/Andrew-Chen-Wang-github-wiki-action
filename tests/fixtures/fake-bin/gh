@@ -1,0 +1,17 @@
+#!/bin/sh
+# Fake gh: intercepts auth setup-git to avoid credential setup failures
+
+case "$1 $2" in
+  "auth setup-git")
+    echo "[fake-gh] auth setup-git intercepted (no-op)"
+    exit 0
+    ;;
+  *)
+    if command -v /usr/bin/gh >/dev/null 2>&1; then
+      exec /usr/bin/gh "$@"
+    else
+      echo "[fake-gh] gh not found, ignoring: $*"
+      exit 0
+    fi
+    ;;
+esac

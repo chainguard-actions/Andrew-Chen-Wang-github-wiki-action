@@ -1,0 +1,57 @@
+#!/bin/sh
+# Fake git: intercepts wiki-related network operations (clone, fetch, push)
+# and passes through all other git commands to the real git binary.
+
+REAL_GIT=/usr/bin/git
+
+case "$1" in
+  clone)
+    # Intercept: git clone <url> .
+    # Initialize a local git repo with a dummy commit instead of cloning
+    shift
+    # Find the destination directory (last argument)
+    dest="."
+    url=""
+    for arg in "$@"; do
+      case "$arg" in
+        --*|-*) ;;
+        *)
+          url="$dest"
+          dest="$arg"
+          ;;
+      esac
+    done
+    if [ "$dest" = "." ]; then
+      # Clone into current directory
+      $REAL_GIT init -b master .
+      $REAL_GIT config user.name "github-actions[bot]"
+      $REAL_GIT config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+      echo "# Wiki Home" > Home.md
+      $REAL_GIT add -A
+      $REAL_GIT commit -m "Initial wiki commit"
+    else
+      mkdir -p "$dest"
+      $REAL_GIT init -b master "$dest"
+      cd "$dest"
+      $REAL_GIT config user.name "github-actions[bot]"
+      $REAL_GIT config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+      echo "# Wiki Home" > Home.md
+      $REAL_GIT add -A
+      $REAL_GIT commit -m "Initial wiki commit"
+    fi
+    exit 0
+    ;;
+  fetch)
+    # Intercept: git fetch — do nothing (no real remote)
+    echo "[fake-git] fetch intercepted (no-op)"
+    exit 0
+    ;;
+  push)
+    # Intercept: git push — do nothing (dry-run mode)
+    echo "[fake-git] push intercepted (no-op)"
+    exit 0
+    ;;
+  *)
+    exec $REAL_GIT "$@"
+    ;;
+esac
